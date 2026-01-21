@@ -1,0 +1,213 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import tensorflow as tf
+from tensorflow.keras.models import Model, load_model
+from tensorflow.keras.layers import Input, Conv1D, MaxPooling1D, UpSampling1D, Dense, Reshape, Lambda
+from tensorflow.keras.callbacks import EarlyStopping
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras import backend as K
+import os
+
+# ────────────────────────────────────────────────────────────────
+#  Configuration (aligned with previous models)
+# ────────────────────────────────────────────────────────────────
+DATA_DIR              = "preprocessed_data"
+X_PATH                = os.path.join(DATA_DIR, "X_windows.npy")
+SCALED_DF_PATH        = os.path.join(DATA_DIR, "normalized_hourly_data.csv")
+MODEL_PATH            = "conv_vae_multi_modal.h5"
+
+TIMESTEPS             = 24                                # matches sliding window size
+FILTERS               = [32, 16]                          # encoder/decoder filter progression
+KERNEL_SIZE           = 3
+POOL_SIZE             = 2
+LATENT_DIM            = 16                                # dimension of mean & log-var vectors
+EPOCHS                = 80
+BATCH_SIZE            = 128
+VALIDATION_SPLIT      = 0.15
+PATIENCE              = 12
+KL_WEIGHT             = 0.001                             # tune: higher → stronger regularization
+ANOMALY_THRESHOLD_PCT = 95
+PLOT_DAYS             = 7
+
+FEATURE_NAMES = [
+    'avg_PM2.5_normalized_scaled',
+    'total_noise_duration_scaled',
+    'noise_event_count_scaled',
+    'avg_salience_scaled'
+]
+
+# ────────────────────────────────────────────────────────────────
+# 1. Load preprocessed sliding windows
+# ────────────────────────────────────────────────────────────────
+print("Loading preprocessed sliding windows...")
+X = np.load(X_PATH)
+print(f"Loaded X shape: {X.shape}")  # (n_windows, 24, n_features)
+
+n_samples, timesteps, n_features = X.shape
+assert timesteps == TIMESTEPS, f"Timesteps mismatch: expected {TIMESTEPS}, got {timesteps}"
+assert n_features == len(FEATURE_NAMES), f"Feature count mismatch: expected {len(FEATURE_NAMES)}, got {n_features}"
+
+df_hourly = pd.read_csv(SCALED_DF_PATH, index_col=0, parse_dates=True)
+print(f"Hourly data shape: {df_hourly.shape}")
+
+# ────────────────────────────────────────────────────────────────
+# 2. Chronological split: ~85% train, ~15% validation
+# ────────────────────────────────────────────────────────────────
+split_idx = int(0.85 * n_samples)
+X_train = X[:split_idx]
+X_val   = X[split_idx:]
+
+print(f"Training windows   : {X_train.shape}")
+print(f"Validation windows : {X_val.shape}")
+
+# ────────────────────────────────────────────────────────────────
+# 3. Sampling function (reparameterization trick)
+# ────────────────────────────────────────────────────────────────
+def sampling(args):
+    z_mean, z_log_var = args
+    batch = K.shape(z_mean)[0]
+    dim = K.shape(z_mean)[1]
+    epsilon = tf.random.normal(shape=(batch, dim))
+    return z_mean + K.exp(0.5 * z_log_var) * epsilon
+
+# ────────────────────────────────────────────────────────────────
+# 4. Build or Load Convolutional VAE
+# ────────────────────────────────────────────────────────────────
+def build_conv_vae(timesteps, n_features, latent_dim=LATENT_DIM, kl_weight=KL_WEIGHT):
+    inputs = Input(shape=(timesteps, n_features), name='encoder_input')
+    
+    # Encoder
+    x = Conv1D(filters=FILTERS[0], kernel_size=KERNEL_SIZE, activation='relu', padding='same')(inputs)
+    x = MaxPooling1D(pool_size=POOL_SIZE, padding='same')(x)
+    x = Conv1D(filters=FILTERS[1], kernel_size=KERNEL_SIZE, activation='relu', padding='same')(x)
+    encoded = MaxPooling1D(pool_size=POOL_SIZE, padding='same')(x)
+    
+    # Flatten → latent parameters
+    shape_before_flatten = K.int_shape(encoded)[1:]
+    x_flat = Reshape((np.prod(shape_before_flatten),))(encoded)
+    
+    z_mean    = Dense(latent_dim, name='z_mean')(x_flat)
+    z_log_var = Dense(latent_dim, name='z_log_var')(x_flat)
+    
+    # Sample z
+    z = Lambda(sampling, output_shape=(latent_dim,), name='z')([z_mean, z_log_var])
+    
+    # Decoder
+    decoder_dense = Dense(np.prod(shape_before_flatten), activation='relu')(z)
+    decoder_reshape = Reshape(shape_before_flatten)(decoder_dense)
+    
+    x = Conv1D(filters=FILTERS[1], kernel_size=KERNEL_SIZE, activation='relu', padding='same')(decoder_reshape)
+    x = UpSampling1D(size=POOL_SIZE)(x)
+    x = Conv1D(filters=FILTERS[0], kernel_size=KERNEL_SIZE, activation='relu', padding='same')(x)
+    x = UpSampling1D(size=POOL_SIZE)(x)
+    
+    outputs = Conv1D(filters=n_features, kernel_size=KERNEL_SIZE, activation='linear', padding='same', name='decoder_output')(x)
+    
+    vae = Model(inputs, outputs, name='conv_vae')
+    
+    # Reconstruction loss
+    reconstruction_loss = K.mean(K.abs(inputs - outputs)) * timesteps * n_features
+    
+    # KL loss
+    kl_loss = -0.5 * K.sum(1 + z_log_var - K.square(z_mean) - K.exp(z_log_var), axis=-1)
+    kl_loss = K.mean(kl_loss) * kl_weight
+    
+    vae.add_loss(reconstruction_loss + kl_loss)
+    vae.compile(optimizer=Adam(learning_rate=0.001))
+    
+    return vae, z_mean, z_log_var
+
+print("\nBuilding / Loading Conv-VAE...")
+custom_objects = {'sampling': sampling}
+
+if os.path.exists(MODEL_PATH):
+    print(f"Loading saved model from {MODEL_PATH}")
+    vae = load_model(MODEL_PATH, custom_objects=custom_objects)
+else:
+    print("No saved model → building new Conv-VAE")
+    vae, z_mean, z_log_var = build_conv_vae(TIMESTEPS, n_features)
+    vae.summary()
+    
+    # Train (loss includes reconstruction + KL)
+    print(f"\nTraining for max {EPOCHS} epochs...")
+    early_stop = EarlyStopping(monitor='loss', patience=PATIENCE, restore_best_weights=True, verbose=1)
+    
+    history = vae.fit(
+        X_train, X_train,
+        epochs=EPOCHS,
+        batch_size=BATCH_SIZE,
+        validation_data=(X_val, X_val),
+        callbacks=[early_stop],
+        verbose=1
+    )
+    
+    vae.save(MODEL_PATH)
+    print(f"Model saved to {MODEL_PATH}")
+    pd.DataFrame(history.history).to_csv("vae_training_history.csv", index=False)
+
+# ────────────────────────────────────────────────────────────────
+# 5. Reconstruction & Anomaly Scoring (use reconstruction part only)
+# ────────────────────────────────────────────────────────────────
+print("\nComputing reconstruction errors...")
+recon_val = vae.predict(X_val, batch_size=BATCH_SIZE, verbose=0)
+mae_val = np.mean(np.abs(X_val - recon_val), axis=(1,2))
+
+threshold = np.percentile(mae_val, ANOMALY_THRESHOLD_PCT)
+print(f"Validation MAE {ANOMALY_THRESHOLD_PCT}th percentile threshold: {threshold:.6f}")
+
+recon_full = vae.predict(X, batch_size=BATCH_SIZE, verbose=0)
+mae_full = np.mean(np.abs(X - recon_full), axis=(1,2))
+
+# ────────────────────────────────────────────────────────────────
+# 6. Anomaly Detection & Alignment
+# ────────────────────────────────────────────────────────────────
+anomaly_flags = (mae_full > threshold).astype(int)
+
+window_end_indices = df_hourly.index[TIMESTEPS-1 : TIMESTEPS-1 + len(mae_full)]
+df_anomalies = pd.DataFrame({
+    'reconstruction_mae': mae_full,
+    'is_detected_anomaly': anomaly_flags
+}, index=window_end_indices)
+
+print(f"Detected {np.sum(anomaly_flags)} anomalous windows out of {len(anomaly_flags)} ({np.mean(anomaly_flags)*100:.2f}%)")
+
+# ────────────────────────────────────────────────────────────────
+# 7. Visualization (consistent with previous models)
+# ────────────────────────────────────────────────────────────────
+plt.figure(figsize=(14, 6))
+plt.plot(df_anomalies.index, df_anomalies['reconstruction_mae'], label='Reconstruction MAE', color='purple', alpha=0.7)
+plt.axhline(threshold, color='red', linestyle='--', label=f'Threshold ({threshold:.5f})')
+plt.scatter(df_anomalies[df_anomalies['is_detected_anomaly']==1].index,
+            df_anomalies[df_anomalies['is_detected_anomaly']==1]['reconstruction_mae'],
+            color='red', marker='o', s=60, label='Detected Anomaly')
+plt.title('Convolutional VAE Reconstruction Error & Detected Anomalies')
+plt.xlabel('Time')
+plt.ylabel('Mean Absolute Error (per window)')
+plt.legend()
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.show()
+
+# Feature-level plot (first N days)
+n_plot = PLOT_DAYS * 24
+plot_df = df_hourly.iloc[:n_plot].copy()
+plot_anom = df_anomalies.iloc[:n_plot].copy()
+
+fig, axes = plt.subplots(n_features, 1, figsize=(15, 2.8*n_features), sharex=True)
+for i, feat in enumerate(FEATURE_NAMES):
+    axes[i].plot(plot_df.index, plot_df[feat], label=feat, color='purple', lw=1.2)
+    anom_idx = plot_anom[plot_anom['is_detected_anomaly']==1].index
+    if len(anom_idx) > 0:
+        axes[i].scatter(anom_idx, plot_df.loc[anom_idx, feat], color='red', marker='o', s=50, label='Anomaly')
+    axes[i].set_ylabel(feat)
+    axes[i].legend(loc='upper right')
+    axes[i].grid(True, alpha=0.3)
+axes[-1].set_xlabel('Time')
+fig.suptitle(f'Multi-Modal Data + Conv-VAE Detected Anomalies (First {PLOT_DAYS} Days)', y=0.99)
+plt.tight_layout(rect=[0,0,1,0.97])
+plt.show()
+
+print("\nConvolutional Variational Autoencoder training & inference complete.")
+print("Model combines probabilistic latent space with convolutional efficiency → suitable for edge uncertainty estimation.")
