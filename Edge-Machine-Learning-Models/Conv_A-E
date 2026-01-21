@@ -1,0 +1,188 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import tensorflow as tf
+from tensorflow.keras.models import Model, load_model
+from tensorflow.keras.layers import Input, Conv1D, MaxPooling1D, UpSampling1D, Dense, Reshape
+from tensorflow.keras.callbacks import EarlyStopping
+from tensorflow.keras.optimizers import Adam
+import os
+
+# ────────────────────────────────────────────────────────────────
+#  Configuration (aligned with LSTM-AE & your preprocessing)
+# ────────────────────────────────────────────────────────────────
+DATA_DIR              = "preprocessed_data"
+X_PATH                = os.path.join(DATA_DIR, "X_windows.npy")
+SCALED_DF_PATH        = os.path.join(DATA_DIR, "normalized_hourly_data.csv")
+MODEL_PATH            = "conv1d_autoencoder_multi_modal.h5"
+
+TIMESTEPS             = 24                                # matches your sliding window size
+FILTERS               = [32, 16]                          # encoder/decoder filter progression
+KERNEL_SIZE           = 3
+POOL_SIZE             = 2
+LATENT_DIM            = 16                                # bottleneck after flattening
+EPOCHS                = 80
+BATCH_SIZE            = 128
+VALIDATION_SPLIT      = 0.15
+PATIENCE              = 12
+ANOMALY_THRESHOLD_PCT = 95
+PLOT_DAYS             = 7
+
+# Must match the exact order/names from your preprocessing
+FEATURE_NAMES = [
+    'avg_PM2.5_normalized_scaled',
+    'total_noise_duration_scaled',
+    'noise_event_count_scaled',
+    'avg_salience_scaled'
+]
+
+# ────────────────────────────────────────────────────────────────
+# 1. Load preprocessed sliding windows
+# ────────────────────────────────────────────────────────────────
+print("Loading preprocessed sliding windows...")
+X = np.load(X_PATH)
+print(f"Loaded X shape: {X.shape}")  # (n_windows, 24, n_features)
+
+n_samples, timesteps, n_features = X.shape
+assert timesteps == TIMESTEPS, f"Timesteps mismatch: expected {TIMESTEPS}, got {timesteps}"
+assert n_features == len(FEATURE_NAMES), f"Feature count mismatch: expected {len(FEATURE_NAMES)}, got {n_features}"
+
+# Load normalized hourly data for plotting & alignment
+df_hourly = pd.read_csv(SCALED_DF_PATH, index_col=0, parse_dates=True)
+print(f"Hourly data shape: {df_hourly.shape}")
+
+# ────────────────────────────────────────────────────────────────
+# 2. Chronological split: train ≈ 85%, validation ≈ 15%
+# ────────────────────────────────────────────────────────────────
+split_idx = int(0.85 * n_samples)
+X_train = X[:split_idx]
+X_val   = X[split_idx:]
+
+print(f"Training windows   : {X_train.shape}")
+print(f"Validation windows : {X_val.shape}")
+
+# ────────────────────────────────────────────────────────────────
+# 3. Build or Load Convolutional Autoencoder
+# ────────────────────────────────────────────────────────────────
+def build_conv_autoencoder(timesteps, n_features):
+    input_layer = Input(shape=(timesteps, n_features))
+    
+    # Encoder
+    x = Conv1D(filters=FILTERS[0], kernel_size=KERNEL_SIZE, activation='relu', padding='same')(input_layer)
+    x = MaxPooling1D(pool_size=POOL_SIZE, padding='same')(x)
+    x = Conv1D(filters=FILTERS[1], kernel_size=KERNEL_SIZE, activation='relu', padding='same')(x)
+    encoded = MaxPooling1D(pool_size=POOL_SIZE, padding='same')(x)
+    
+    # Latent space (flattened bottleneck)
+    shape_before_flatten = encoded.shape[1:]
+    x = Reshape((np.prod(shape_before_flatten),))(encoded)
+    bottleneck = Dense(LATENT_DIM, activation='relu')(x)
+    
+    # Decoder
+    x = Dense(np.prod(shape_before_flatten), activation='relu')(bottleneck)
+    x = Reshape(shape_before_flatten)(x)
+    
+    x = Conv1D(filters=FILTERS[1], kernel_size=KERNEL_SIZE, activation='relu', padding='same')(x)
+    x = UpSampling1D(size=POOL_SIZE)(x)
+    x = Conv1D(filters=FILTERS[0], kernel_size=KERNEL_SIZE, activation='relu', padding='same')(x)
+    x = UpSampling1D(size=POOL_SIZE)(x)
+    
+    # Output layer matches input shape
+    decoded = Conv1D(filters=n_features, kernel_size=KERNEL_SIZE, activation='linear', padding='same')(x)
+    
+    model = Model(inputs=input_layer, outputs=decoded)
+    model.compile(optimizer=Adam(learning_rate=0.001), loss='mae')
+    return model
+
+print("\nBuilding / Loading Conv1D Autoencoder...")
+if os.path.exists(MODEL_PATH):
+    print(f"Loading saved model from {MODEL_PATH}")
+    autoencoder = load_model(MODEL_PATH)
+else:
+    print("No saved model → building new Conv1D-AE")
+    autoencoder = build_conv_autoencoder(TIMESTEPS, n_features)
+    autoencoder.summary()
+    
+    # Train
+    print(f"\nTraining for max {EPOCHS} epochs...")
+    early_stop = EarlyStopping(monitor='val_loss', patience=PATIENCE, restore_best_weights=True, verbose=1)
+    
+    history = autoencoder.fit(
+        X_train, X_train,
+        epochs=EPOCHS,
+        batch_size=BATCH_SIZE,
+        validation_data=(X_val, X_val),
+        callbacks=[early_stop],
+        verbose=1
+    )
+    
+    autoencoder.save(MODEL_PATH)
+    print(f"Model saved to {MODEL_PATH}")
+    
+    pd.DataFrame(history.history).to_csv("conv_training_history.csv", index=False)
+
+# ────────────────────────────────────────────────────────────────
+# 4. Reconstruction & Thresholding (unsupervised)
+# ────────────────────────────────────────────────────────────────
+print("\nComputing reconstruction errors...")
+recon_val = autoencoder.predict(X_val, batch_size=BATCH_SIZE, verbose=0)
+mae_val = np.mean(np.abs(X_val - recon_val), axis=(1,2))
+
+threshold = np.percentile(mae_val, ANOMALY_THRESHOLD_PCT)
+print(f"Validation MAE {ANOMALY_THRESHOLD_PCT}th percentile threshold: {threshold:.6f}")
+
+recon_full = autoencoder.predict(X, batch_size=BATCH_SIZE, verbose=0)
+mae_full = np.mean(np.abs(X - recon_full), axis=(1,2))
+
+# ────────────────────────────────────────────────────────────────
+# 5. Anomaly Detection & Alignment
+# ────────────────────────────────────────────────────────────────
+anomaly_flags = (mae_full > threshold).astype(int)
+
+window_end_indices = df_hourly.index[TIMESTEPS-1 : TIMESTEPS-1 + len(mae_full)]
+df_anomalies = pd.DataFrame({
+    'reconstruction_mae': mae_full,
+    'is_detected_anomaly': anomaly_flags
+}, index=window_end_indices)
+
+print(f"Detected {np.sum(anomaly_flags)} anomalous windows out of {len(anomaly_flags)} ({np.mean(anomaly_flags)*100:.2f}%)")
+
+# ────────────────────────────────────────────────────────────────
+# 6. Visualization (same style as LSTM version)
+# ────────────────────────────────────────────────────────────────
+plt.figure(figsize=(14, 6))
+plt.plot(df_anomalies.index, df_anomalies['reconstruction_mae'], label='Reconstruction MAE', color='teal', alpha=0.7)
+plt.axhline(threshold, color='red', linestyle='--', label=f'Threshold ({threshold:.5f})')
+plt.scatter(df_anomalies[df_anomalies['is_detected_anomaly']==1].index,
+            df_anomalies[df_anomalies['is_detected_anomaly']==1]['reconstruction_mae'],
+            color='red', marker='o', s=60, label='Detected Anomaly')
+plt.title('Conv1D-Autoencoder Reconstruction Error & Detected Anomalies')
+plt.xlabel('Time')
+plt.ylabel('Mean Absolute Error (per window)')
+plt.legend()
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.show()
+
+# Feature-level plot (first N days)
+n_plot = PLOT_DAYS * 24
+plot_df = df_hourly.iloc[:n_plot].copy()
+plot_anom = df_anomalies.iloc[:n_plot].copy()
+
+fig, axes = plt.subplots(n_features, 1, figsize=(15, 2.8*n_features), sharex=True)
+for i, feat in enumerate(FEATURE_NAMES):
+    axes[i].plot(plot_df.index, plot_df[feat], label=feat, color='teal', lw=1.2)
+    anom_idx = plot_anom[plot_anom['is_detected_anomaly']==1].index
+    if len(anom_idx) > 0:
+        axes[i].scatter(anom_idx, plot_df.loc[anom_idx, feat], color='red', marker='o', s=50, label='Anomaly')
+    axes[i].set_ylabel(feat)
+    axes[i].legend(loc='upper right')
+    axes[i].grid(True, alpha=0.3)
+axes[-1].set_xlabel('Time')
+fig.suptitle(f'Multi-Modal Data + Conv1D-AE Detected Anomalies (First {PLOT_DAYS} Days)', y=0.99)
+plt.tight_layout(rect=[0,0,1,0.97])
+plt.show()
+
+print("\nConv1D Autoencoder training & inference complete.")
+print("Model is lightweight → good candidate for TensorFlow Lite Micro / edge deployment.")
