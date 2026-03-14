@@ -3,3 +3,5 @@ mixed_real_virtual_database.py: create 30% virtual data from original virtual da
 100k data augmentation.py: augment the data from 35040 to 100k
 100k x_windows formed.py: form x_windows_100k.npy for 100k data
 100k authenticity.py: check if the data augmentation has a good quality 
+
+models: 4 models for 35040 dataset and 4 models for 100k datasets
