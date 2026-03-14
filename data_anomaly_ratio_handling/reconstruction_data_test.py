@@ -3,92 +3,92 @@ import os
 
 
 def fix_duplicated_reconstruction_data():
-    """修复重复数据的reconstruction_data.csv"""
+    """Fix duplicated reconstruction_data.csv"""
 
     input_path = r"D:\Oswaldo's surf project\DR O's database\data_anomaly_ratio_handling\reconstruction_data.csv"
     output_path = r"D:\Oswaldo's surf project\DR O's database\data_anomaly_ratio_handling\reconstruction_data_fixed.csv"
 
-    print("🔍 检测并修复重复数据...")
+    print("🔍 Detecting and fixing duplicate data...")
 
-    # 1. 加载数据
+    # 1. Load data
     df = pd.read_csv(input_path)
 
-    # 重命名时间列
+    # Rename time column
     time_column = df.columns[0]
     df.rename(columns={time_column: 'timestamp'}, inplace=True)
 
-    # 转换时间格式
+    # Convert time format
     df['timestamp'] = pd.to_datetime(df['timestamp'], format='%Y/%m/%d %H:%M', errors='coerce')
 
-    print(f"原始数据形状: {df.shape}")
-    print(f"时间列: 'timestamp'")
+    print(f"Original data shape: {df.shape}")
+    print(f"Time column: 'timestamp'")
 
-    # 2. 检测重复行（基于所有列）
+    # 2. Detect duplicate rows (based on all columns)
     duplicate_rows = df.duplicated().sum()
-    print(f"完全重复的行数: {duplicate_rows} ({duplicate_rows / len(df) * 100:.1f}%)")
+    print(f"Number of fully duplicate rows: {duplicate_rows} ({duplicate_rows / len(df) * 100:.1f}%)")
 
-    # 3. 检测时间戳重复
+    # 3. Detect timestamp duplicates
     time_duplicates = df['timestamp'].duplicated().sum()
-    print(f"重复的时间戳数: {time_duplicates}")
+    print(f"Number of duplicate timestamps: {time_duplicates}")
 
-    # 4. 按时间分组查看
-    print("\n📊 按时间戳分组统计:")
+    # 4. Group by timestamp for statistics
+    print("\n📊 Group statistics by timestamp:")
     time_groups = df.groupby('timestamp').size().reset_index(name='count')
 
-    # 统计重复次数分布
+    # Distribution of duplicate counts
     duplicate_counts = time_groups['count'].value_counts().sort_index()
     for count, freq in duplicate_counts.items():
-        print(f"  出现{count}次的时间戳: {freq}个")
+        print(f"  Timestamps with {count} occurrences: {freq}")
 
-    # 5. 修复：删除重复行，保留第一个
-    print("\n🧹 修复数据...")
+    # 5. Fix: remove duplicate rows, keep the first
+    print("\n🧹 Fixing data...")
 
-    # 方法1：按时间戳去重，保留第一个
+    # Method 1: deduplicate by timestamp, keep the first
     df_fixed = df.drop_duplicates(subset=['timestamp'], keep='first')
 
-    print(f"修复后数据形状: {df_fixed.shape}")
-    print(f"删除了 {len(df) - len(df_fixed)} 行重复数据")
+    print(f"Data shape after fix: {df_fixed.shape}")
+    print(f"Removed {len(df) - len(df_fixed)} duplicate rows")
 
-    # 6. 验证修复结果
-    print("\n✅ 验证修复结果:")
+    # 6. Verify fix results
+    print("\n✅ Verifying fix results:")
     remaining_duplicates = df_fixed['timestamp'].duplicated().sum()
-    print(f"剩余重复时间戳: {remaining_duplicates}")
+    print(f"Remaining duplicate timestamps: {remaining_duplicates}")
 
-    # 7. 保存修复后的数据
-    print(f"\n💾 保存修复后的数据到: {output_path}")
+    # 7. Save fixed data
+    print(f"\n💾 Saving fixed data to: {output_path}")
     df_fixed.to_csv(output_path, index=False)
 
-    # 8. 验证文件
-    print("\n🔍 验证保存的文件...")
+    # 8. Validate saved file
+    print("\n🔍 Validating saved file...")
     df_loaded = pd.read_csv(output_path)
-    print(f"加载的数据形状: {df_loaded.shape}")
+    print(f"Loaded data shape: {df_loaded.shape}")
 
-    # 显示前几行
-    print("\n前5行数据:")
+    # Display first few rows
+    print("\nFirst 5 rows of data:")
     print(df_loaded.head())
 
-    # 检查时间序列连续性
+    # Check time series continuity
     times = pd.to_datetime(df_loaded['timestamp'])
     time_diffs = times.diff().dropna()
 
-    print(f"\n📈 时间间隔统计:")
-    print(f"  最小间隔: {time_diffs.min()}")
-    print(f"  最大间隔: {time_diffs.max()}")
-    print(f"  平均间隔: {time_diffs.mean()}")
+    print(f"\n📈 Time interval statistics:")
+    print(f"  Minimum interval: {time_diffs.min()}")
+    print(f"  Maximum interval: {time_diffs.max()}")
+    print(f"  Average interval: {time_diffs.mean()}")
 
-    # 检查是否都是1小时间隔
+    # Check if all intervals are 1 hour
     one_hour = pd.Timedelta(hours=1)
     is_hourly = (time_diffs == one_hour).all()
 
     if is_hourly:
-        print(f"  ✅ 数据是连续的小时间序列")
+        print(f"  ✅ Data is a continuous hourly time series")
     else:
-        print(f"  ⚠ 数据不是严格的小时间序列")
+        print(f"  ⚠ Data is not strictly hourly")
         irregular = (time_diffs != one_hour).sum()
-        print(f"    不规则间隔数量: {irregular}")
+        print(f"    Number of irregular intervals: {irregular}")
 
     return df_fixed
 
 
-# 运行修复函数
+# Run the fix function
 fixed_df = fix_duplicated_reconstruction_data()
