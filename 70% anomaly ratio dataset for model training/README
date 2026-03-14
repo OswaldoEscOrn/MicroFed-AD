@@ -4,3 +4,5 @@ data_augmentation_100k.py:augment the 70% anomaly ratio dataset in data_anomaly_
 augmented  70%_anomaly_35040data authenticity.py: check whether the augmented 35040 dataset is accurate compared with original dataset
 augmented  100k_data authenticity.py:check whether the augmented  100k dataset is accurate compared with original dataset
 
+35040_70%_anomaly_data_x_windows_formed.py： form x_windows for 35040 dataset and use for models' training
+100k_data_preparation_x_windows_formed.py: form x_windows for 100k dataset and use for models' training
