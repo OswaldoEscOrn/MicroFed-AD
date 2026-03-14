@@ -14,14 +14,14 @@ from datetime import datetime
 
 warnings.filterwarnings('ignore')
 
-# ====================== 1. 配置参数（按照第一个python文件） ======================
+# ====================== 1. Configuration parameters (following first python file) ======================
 DATA_DIR = r"D:\Oswaldo's surf project\DR O's database\preprocessed_data"
 X_PATH = os.path.join(DATA_DIR, "X_windows_100k.npy")
 SCALED_DF_PATH = os.path.join(DATA_DIR, "normalized_hourly_data.csv")
 MODEL_PATH = r"D:\Oswaldo's surf project\DR O's database\models\conv1d_autoencoder_multi_modal100k_data.h5"
 VISUALIZATION_PATH = r"D:\Oswaldo's surf project\DR O's database\visualizations"
 
-TIMESTEPS = 24  # 滑动窗口大小
+TIMESTEPS = 24  # Sliding window size
 EPOCHS = 80
 BATCH_SIZE = 128
 VALIDATION_SPLIT = 0.15
@@ -29,7 +29,7 @@ PATIENCE = 12
 ANOMALY_THRESHOLD_PCT = 95
 PLOT_DAYS = 7
 
-# 特征名称（按照第一个python文件）
+# Feature names (following first python file)
 FEATURE_NAMES = [
     'avg_PM2.5_normalized_scaled',
     'total_noise_duration_scaled',
@@ -37,15 +37,15 @@ FEATURE_NAMES = [
     'avg_salience_scaled'
 ]
 
-# 确保可视化目录存在
+# Ensure visualization directory exists
 os.makedirs(VISUALIZATION_PATH, exist_ok=True)
 
-import time  # 确保已导入time模块
+import time  # Ensure time module is imported
 
-# 记录开始时间
+# Record start time
 start_time = time.time()
 
-# ====================== 2. 数据加载流程（按照第一个python文件） ======================
+# ====================== 2. Data loading procedure (following first python file) ======================
 print("Loading preprocessed sliding windows...")
 X = np.load(X_PATH)
 print(f"Loaded X shape: {X.shape}")  # (n_windows, 24, n_features)
@@ -54,11 +54,11 @@ n_samples, timesteps, n_features = X.shape
 assert timesteps == TIMESTEPS, f"Timesteps mismatch: expected {TIMESTEPS}, got {timesteps}"
 assert n_features == len(FEATURE_NAMES), f"Feature count mismatch: expected {len(FEATURE_NAMES)}, got {n_features}"
 
-# 加载归一化的小时数据用于绘图和对齐
+# Load normalized hourly data for plotting and alignment
 df_hourly = pd.read_csv(SCALED_DF_PATH, index_col=0, parse_dates=True)
 print(f"Hourly data shape: {df_hourly.shape}")
 
-# ====================== 3. 时序分割（按照第一个python文件） ======================
+# ====================== 3. Time series split (following first python file) ======================
 split_idx = int(0.85 * n_samples)
 X_train = X[:split_idx]
 X_val = X[split_idx:]
@@ -67,56 +67,56 @@ print(f"Training windows   : {X_train.shape}")
 print(f"Validation windows : {X_val.shape}")
 
 
-# ====================== 4. 构建改进的Conv-AE模型（按照最后一个python文件） ======================
+# ====================== 4. Build improved Conv-AE model (following last python file) ======================
 def build_improved_conv_ae(sequence_length=24, n_features=4):
     """
-    构建改进的Conv-AE模型（带残差连接，类似论文中的结构）
-    按照第二个python文件中的build_residual_conv_ae函数
+    Build an improved Conv-AE model (with residual connections, similar to the structure in the paper)
+    Following the build_residual_conv_ae function from the second python file
     """
     print(f"\nBuilding improved Residual CONV-AE:")
     print(f"  Input shape: ({sequence_length}, {n_features})")
 
     inputs = Input(shape=(sequence_length, n_features))
 
-    # ====== 编码器 ======
-    # 第一卷积块
+    # ====== Encoder ======
+    # First convolutional block
     x1 = Conv1D(32, kernel_size=5, padding='same', activation='relu')(inputs)
     x1 = BatchNormalization()(x1)
     x1 = MaxPooling1D(pool_size=2, padding='same')(x1)
 
-    # 第二卷积块
+    # Second convolutional block
     x2 = Conv1D(64, kernel_size=3, padding='same', activation='relu')(x1)
     x2 = BatchNormalization()(x2)
     x2 = MaxPooling1D(pool_size=2, padding='same')(x2)
 
-    # 第三卷积块
+    # Third convolutional block
     x3 = Conv1D(128, kernel_size=3, padding='same', activation='relu')(x2)
     x3 = BatchNormalization()(x3)
     encoded = MaxPooling1D(pool_size=2, padding='same')(x3)
 
-    # ====== 解码器 ======
-    # 第一反卷积块
+    # ====== Decoder ======
+    # First deconvolutional block
     y1 = Conv1D(128, kernel_size=3, padding='same', activation='relu')(encoded)
     y1 = BatchNormalization()(y1)
     y1 = UpSampling1D(size=2)(y1)
 
-    # 第二反卷积块
+    # Second deconvolutional block
     y2 = Conv1D(64, kernel_size=3, padding='same', activation='relu')(y1)
     y2 = BatchNormalization()(y2)
     y2 = UpSampling1D(size=2)(y2)
 
-    # 第三反卷积块
+    # Third deconvolutional block
     y3 = Conv1D(32, kernel_size=3, padding='same', activation='relu')(y2)
     y3 = BatchNormalization()(y3)
     y3 = UpSampling1D(size=2)(y3)
 
-    # 输出层
+    # Output layer
     outputs = Conv1D(n_features, kernel_size=5, padding='same', activation='linear')(y3)
 
-    # ====== 完整模型 ======
+    # ====== Full model ======
     autoencoder = Model(inputs, outputs, name='improved_conv_ae')
 
-    # 计算参数
+    # Count parameters
     total_params = autoencoder.count_params()
     trainable_params = np.sum([np.prod(v.shape) for v in autoencoder.trainable_weights])
     non_trainable_params = total_params - trainable_params
@@ -129,13 +129,12 @@ def build_improved_conv_ae(sequence_length=24, n_features=4):
     return autoencoder, total_params
 
 
-# ====================== 5. 构建或加载模型 ======================
-# ====================== 5. 构建或加载模型 ======================
+# ====================== 5. Build or load model ======================
 print("\nBuilding / Loading Improved Conv1D Autoencoder...")
 
 
 def compile_model(model):
-    """编译模型的辅助函数"""
+    """Helper function to compile the model"""
     model.compile(
         optimizer=Adam(learning_rate=0.001),
         loss='mae',
@@ -147,11 +146,11 @@ def compile_model(model):
 if os.path.exists(MODEL_PATH):
     print(f"Loading saved model from {MODEL_PATH}")
     try:
-        # Conv-AE 没有自定义层，直接加载
-        autoencoder = load_model(MODEL_PATH, compile=False)  # 注意：load时设置compile=False
+        # Conv-AE has no custom layers, load directly
+        autoencoder = load_model(MODEL_PATH, compile=False)  # Note: load with compile=False
         print("Model loaded successfully!")
 
-        # 重新编译模型
+        # Recompile the model
         autoencoder = compile_model(autoencoder)
         print("Model recompiled successfully!")
 
@@ -168,7 +167,7 @@ else:
     autoencoder, total_params = build_improved_conv_ae(TIMESTEPS, n_features)
     autoencoder = compile_model(autoencoder)
 
-    # 训练模型
+    # Train model
     print(f"\nTraining for max {EPOCHS} epochs...")
     early_stop = EarlyStopping(
         monitor='val_loss',
@@ -189,13 +188,13 @@ else:
     autoencoder.save(MODEL_PATH)
     print(f"Model saved to {MODEL_PATH}")
 
-# ====================== 6. 计算验证损失 ======================
+# ====================== 6. Compute validation loss ======================
 print("\n" + "=" * 60)
 print("VALIDATION LOSS INFORMATION")
 print("=" * 60)
 
 if history is not None:
-    # 从训练历史获取验证损失
+    # Get validation loss from training history
     best_val_loss = min(history.history['val_loss'])
     best_epoch = np.argmin(history.history['val_loss']) + 1
     final_val_loss = history.history['val_loss'][-1]
@@ -207,14 +206,14 @@ if history is not None:
     print(f"  - Final validation loss (MAE): {final_val_loss:.6f}")
     print(f"  - Training epochs: {len(history.history['loss'])}")
 
-    # 如果有MSE指标
+    # If MSE metric exists
     if 'val_mse' in history.history:
         best_val_mse = min(history.history['val_mse'])
         final_val_mse = history.history['val_mse'][-1]
         print(f"  - Best validation MSE: {best_val_mse:.6f}")
         print(f"  - Final validation MSE: {final_val_mse:.6f}")
 else:
-    # 对于加载的模型，重新计算验证损失
+    # For loaded model, recompute validation loss
     print("Evaluating loaded model on validation set...")
     val_metrics = autoencoder.evaluate(X_val, X_val, batch_size=BATCH_SIZE, verbose=0)
 
@@ -231,7 +230,7 @@ else:
 
 print("=" * 60)
 
-# ====================== 7. 重建和阈值计算 ======================
+# ====================== 7. Reconstruction and threshold calculation ======================
 print("\nComputing reconstruction errors...")
 recon_val = autoencoder.predict(X_val, batch_size=BATCH_SIZE, verbose=0)
 mae_val = np.mean(np.abs(X_val - recon_val), axis=(1, 2))
@@ -246,22 +245,22 @@ print("\nComputing validation loss...")
 val_loss = autoencoder.evaluate(X_val, X_val, verbose=0)
 print(f"Validation Loss (MAE): {val_loss[0]:.6f}")
 print(f"Validation MSE: {val_loss[1]:.6f}")
-# ====================== 8. 异常检测和对齐 ======================
-# ====================== 8. 异常检测和对齐 ======================
+
+# ====================== 8. Anomaly detection and alignment ======================
 anomaly_flags = (mae_full > threshold).astype(int)
 
-# 诊断数据长度
+# Diagnose data length
 print(f"\nDiagnosing data length mismatch:")
 print(f"  - mae_full length: {len(mae_full)}")
 print(f"  - X shape: {X.shape}")
 print(f"  - df_hourly length: {len(df_hourly)}")
 print(f"  - Expected windows from hourly data: {len(df_hourly) - TIMESTEPS + 1}")
 
-# 取最小长度确保匹配
+# Take the minimum length to ensure alignment
 n_windows = min(len(mae_full), len(df_hourly) - TIMESTEPS + 1)
 print(f"  - Using {n_windows} windows for alignment")
 
-# 截断数据使其匹配
+# Truncate data to match
 mae_full = mae_full[:n_windows]
 anomaly_flags = anomaly_flags[:n_windows]
 
@@ -276,19 +275,19 @@ anomaly_ratio = np.mean(anomaly_flags) * 100
 print(f"Detected {anomaly_count} anomalous windows out of {len(anomaly_flags)} ({anomaly_ratio:.2f}%)")
 
 
-# ====================== 9. 综合可视化（按照第二个python文件的布局） ======================
+# ====================== 9. Comprehensive visualization (following layout of second python file) ======================
 def create_comprehensive_visualization(df_hourly, df_anomalies, mae_full, threshold,
                                        X, recon_full, history=None, model_name="Improved Conv-AE"):
     """
-    创建综合可视化图表（按照第二个python文件的布局）
+    Create comprehensive visualization (following layout of second python file)
     """
     print(f"\nCreating comprehensive visualization...")
 
-    # 设置绘图风格
+    # Set plotting style
     plt.style.use('seaborn-v0_8-darkgrid')
     fig = plt.figure(figsize=(20, 14))
 
-    # 1. 训练损失变化（如果有历史数据）
+    # 1. Training loss history (if history data exists)
     if history is not None:
         ax1 = plt.subplot(3, 3, 1)
         epochs = range(1, len(history.history['loss']) + 1)
@@ -300,14 +299,14 @@ def create_comprehensive_visualization(df_hourly, df_anomalies, mae_full, thresh
         ax1.legend()
         ax1.grid(True, alpha=0.3)
 
-    # 2. 重建误差时间序列
+    # 2. Reconstruction error time series
     ax2 = plt.subplot(3, 3, 2 if history is None else 2)
     ax2.plot(df_anomalies.index, df_anomalies['reconstruction_mae'],
              label='Reconstruction MAE', color='teal', alpha=0.7, linewidth=1)
     ax2.axhline(threshold, color='red', linestyle='--', linewidth=2,
                 label=f'Threshold ({threshold:.5f})')
 
-    # 标记异常点
+    # Mark anomaly points
     anomaly_indices = df_anomalies[df_anomalies['is_detected_anomaly'] == 1].index
     if len(anomaly_indices) > 0:
         anomaly_errors = df_anomalies.loc[anomaly_indices, 'reconstruction_mae']
@@ -320,7 +319,7 @@ def create_comprehensive_visualization(df_hourly, df_anomalies, mae_full, thresh
     ax2.legend(loc='upper right', fontsize=10)
     ax2.grid(True, alpha=0.3)
 
-    # 3. 重建误差分布
+    # 3. Reconstruction error distribution
     ax3 = plt.subplot(3, 3, 3 if history is None else 3)
     n_bins = min(100, len(mae_full) // 10)
     ax3.hist(mae_full, bins=n_bins, alpha=0.7, color='skyblue',
@@ -328,7 +327,7 @@ def create_comprehensive_visualization(df_hourly, df_anomalies, mae_full, thresh
     ax3.axvline(x=threshold, color='red', linestyle='--', linewidth=2,
                 label=f'Threshold ({threshold:.4f})')
 
-    # 添加高斯分布拟合
+    # Add Gaussian distribution fit
     from scipy.stats import norm
     mu, std = norm.fit(mae_full)
     xmin, xmax = ax3.get_xlim()
@@ -343,13 +342,13 @@ def create_comprehensive_visualization(df_hourly, df_anomalies, mae_full, thresh
     ax3.legend()
     ax3.grid(True, alpha=0.3)
 
-    # 4. 特征级对比（第一个样本）
+    # 4. Feature-level comparison (first sample)
     ax4 = plt.subplot(3, 3, 4 if history is None else 4)
     if len(X) > 0:
         sample_idx = 0
         time_steps = range(TIMESTEPS)
 
-        # 绘制第一个样本的第一个特征
+        # Plot first feature of first sample
         feature_idx = 0
         original_values = X[sample_idx][:, feature_idx]
         reconstructed_values = recon_full[sample_idx][:, feature_idx]
@@ -366,7 +365,7 @@ def create_comprehensive_visualization(df_hourly, df_anomalies, mae_full, thresh
         ax4.legend()
         ax4.grid(True, alpha=0.3)
 
-    # 5. 特征级对比（第一个样本的第二个特征）
+    # 5. Feature-level comparison (first sample, second feature)
     ax5 = plt.subplot(3, 3, 5 if history is None else 5)
     if len(X) > 0 and len(FEATURE_NAMES) > 1:
         sample_idx = 0
@@ -388,10 +387,10 @@ def create_comprehensive_visualization(df_hourly, df_anomalies, mae_full, thresh
         ax5.legend()
         ax5.grid(True, alpha=0.3)
 
-    # 6. 模型参数信息
+    # 6. Model parameter information
     ax6 = plt.subplot(3, 3, 6 if history is None else 6)
     models = ['LSTM-AE', 'Conv-AE', 'Improved Conv-AE']
-    # 近似参数数量（根据论文和实际计算）
+    # Approximate parameter counts (based on paper and actual computation)
     params_approx = [29124, 7892, total_params]
     colors = ['lightblue', 'lightgreen', 'lightcoral']
 
@@ -400,33 +399,32 @@ def create_comprehensive_visualization(df_hourly, df_anomalies, mae_full, thresh
     ax6.set_ylabel('Number of Parameters', fontsize=12)
     ax6.grid(True, alpha=0.3, axis='y')
 
-    # 添加数值标签
+    # Add numerical labels
     for bar, param in zip(bars, params_approx):
         ax6.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 500,
                  f'{param:,}', ha='center', va='bottom', fontsize=10)
 
-    # 7. 前N天的特征级异常检测
-    # 7. 前N天的特征级异常检测（更稳健版本）
+    # 7. Feature-level anomaly detection over first N days (more robust version)
     ax7 = plt.subplot(3, 3, 7 if history is None else 7)
     n_plot = PLOT_DAYS * 24
 
     if len(df_hourly) >= n_plot:
         plot_df = df_hourly.iloc[:n_plot].copy()
 
-        # 获取plot_df的时间范围
+        # Get the time range of plot_df
         plot_start = plot_df.index[0]
         plot_end = plot_df.index[-1]
 
-        # 筛选时间范围内的异常
+        # Filter anomalies within the time range
         time_mask = (df_anomalies.index >= plot_start) & (df_anomalies.index <= plot_end)
         plot_anom = df_anomalies[time_mask].copy()
 
-        # 绘制第一个特征(改动）
+        # Plot the first feature (modified)
         if len(FEATURE_NAMES) > 0:
             feat = FEATURE_NAMES[0]
             ax7.plot(plot_df.index, plot_df[feat], label=feat, color='teal', lw=1.2)
 
-            # 确保异常时间戳在plot_df中存在
+            # Ensure anomaly timestamps exist in plot_df
             if len(plot_anom) > 0:
                 valid_anom = plot_anom[plot_anom['is_detected_anomaly'] == 1]
                 valid_anom_idx = valid_anom.index[valid_anom.index.isin(plot_df.index)]
@@ -440,7 +438,7 @@ def create_comprehensive_visualization(df_hourly, df_anomalies, mae_full, thresh
         ax7.grid(True, alpha=0.3)
         ax7.set_title(f'First {PLOT_DAYS} Days - {feat}', fontsize=12, fontweight='bold')
 
-    # 8. 不同阈值下的异常率
+    # 8. Anomaly rate vs threshold
     ax8 = plt.subplot(3, 3, 8 if history is None else 8)
     thresholds = np.percentile(mae_val, range(90, 100))
     anomaly_rates = []
@@ -458,7 +456,7 @@ def create_comprehensive_visualization(df_hourly, df_anomalies, mae_full, thresh
     ax8.legend()
     ax8.grid(True, alpha=0.3)
 
-    # 9. 性能总结
+    # 9. Performance summary
     ax9 = plt.subplot(3, 3, 9 if history is None else 9)
     ax9.axis('off')
 
@@ -485,7 +483,7 @@ def create_comprehensive_visualization(df_hourly, df_anomalies, mae_full, thresh
 
     plt.tight_layout()
 
-    # 保存图表
+    # Save figure
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     save_path = os.path.join(VISUALIZATION_PATH, f"conv_ae_results_100k_data{timestamp}.png")
 
@@ -503,8 +501,8 @@ def create_comprehensive_visualization(df_hourly, df_anomalies, mae_full, thresh
     return save_path
 
 
-# ====================== 10. 创建可视化 ======================
-# 如果有训练历史，加载它
+# ====================== 10. Create visualization ======================
+# If training history exists, load it
 history_data = None
 if os.path.exists(MODEL_PATH.replace('.h5', '_history100k_data.csv')):
     try:
@@ -513,7 +511,7 @@ if os.path.exists(MODEL_PATH.replace('.h5', '_history100k_data.csv')):
     except:
         pass
 
-# 创建综合可视化
+# Create comprehensive visualization
 vis_path = create_comprehensive_visualization(
     df_hourly=df_hourly,
     df_anomalies=df_anomalies,
@@ -525,7 +523,7 @@ vis_path = create_comprehensive_visualization(
     model_name="Improved Conv-AE"
 )
 
-# ====================== 11. 输出总结报告 ======================
+# ====================== 11. Output summary report ======================
 print("\n" + "=" * 80)
 print("IMPROVED CONVOLUTIONAL AUTOENCODER - TRAINING COMPLETE")
 print("=" * 80)
@@ -549,24 +547,24 @@ print(f"  Visualization: {vis_path}")
 print(f"\n✅ Improved Conv-AE pipeline completed successfully!")
 print("   Model is lightweight → suitable for TensorFlow Lite Micro / edge deployment.")
 
-# 计算总运行时间
+# Calculate total execution time
 end_time = time.time()
 total_time_seconds = end_time - start_time
 total_time_minutes = total_time_seconds / 60
 total_time_hours = total_time_minutes / 60
 
-    # 输出总运行时间
+# Output total execution time
 print(f"\n⏱️  Total Execution Time:")
 print(f"  Total time: {total_time_seconds:.2f} seconds")
 print(f"            : {total_time_minutes:.2f} minutes")
 print(f"            : {total_time_hours:.2f} hours")
 
-# ====================== 12. 保存结果为JSON文件（仿照第二个文件） ======================
+# ====================== 12. Save results as JSON file (following second file) ======================
 import json
 
 
 def save_results_conv(results_dict, save_dir):
-    """保存训练结果到JSON文件"""
+    """Save training results to a JSON file"""
     os.makedirs(save_dir, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     results_path = os.path.join(save_dir, f"conv_ae_results_100k_data{timestamp}.json")
@@ -578,7 +576,7 @@ def save_results_conv(results_dict, save_dir):
     return results_path
 
 
-# 构建结果字典
+# Build results dictionary
 results_dict = {
     'model_name': ' Conv-AE',
     'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
@@ -603,22 +601,21 @@ results_dict = {
         'anomaly_ratio': float(anomaly_ratio)
     },
     'file_paths': {
-        'model_path':MODEL_PATH,
+        'model_path': MODEL_PATH,
         'visualization_path': vis_path,
         'data_path': DATA_DIR
     },
     'feature_names': FEATURE_NAMES,
-# 添加总运行时间到结果中
+    # Add total execution time to results
     'total_execution_time_seconds': float(total_time_seconds),
     'total_execution_time_minutes': float(total_time_minutes),
     'total_execution_time_hours': float(total_time_hours)
 }
 
-# 保存JSON文件
-# results_path = save_results_conv(results_dict, os.path.dirname(r"D:\Oswaldo's surf project\DR O's database\models"))
+# Save JSON file
 models_dir = r"D:\Oswaldo's surf project\DR O's database\models"
 results_path = save_results_conv(results_dict, models_dir)
-# 更新总结报告输出
+# Update summary report output
 print(f"\n💾 Output Files:")
 print(f"  - Model: {MODEL_PATH}")
 print(f"  - Visualization: {vis_path}")
