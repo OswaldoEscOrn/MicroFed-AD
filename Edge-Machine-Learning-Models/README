@@ -1,3 +1,5 @@
+Edge-Machine-Learning-Models folder :refers to the 100% real dataset for model training
+
 Deep_AE in real.py: 35040 real samples for model training
 Deep_AE in real2.py:100k augmented real samples for training
 
