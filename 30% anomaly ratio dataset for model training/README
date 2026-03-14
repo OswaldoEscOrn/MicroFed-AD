@@ -3,3 +3,6 @@ final_preprocessed_data_augmentation_100k.py:use the 30% anomaly 35040 dataset f
 
 100k_data_preparation_x_windows_formed.py： form the x_windows of 100k dataset for model training
 data_preparation_x_windows_formed.py:form the x_windows of 35040 dataset for model training
+
+DeepAE real1.py，LSTM_AE real1.py, CONV_AE real1.py, CONV_VAE real1.py:30% anamaly ratio 35040 data for model training
+DeepAE real_100k.py，LSTM_AE real_100k.py, CONV_AE real_100k.py, CONV_VAE real_100k.py:30% anamaly ratio 100k data for model training
