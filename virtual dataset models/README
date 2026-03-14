@@ -1,1 +1,11 @@
+DeepAE_realize.py:use 35040 virtual samples to train the Deep Autoencoder model
+DeepAE_realize2.py:augment virtual samples from 35040 to  100k and use it to train the Deep Autoencoder model
 
+LSTM_realize_original.py:use 35040 virtual samples to train the LSTM Autoencoder model
+LSTM_realize_original2.py:augment virtual samples from 35040 to  100k and use it to train the LSTM Autoencoder model
+
+CONV_AE_realize.py:use 35040 virtual samples to train the CONV Autoencoder model
+CONV_AE_realize2.py:augment virtual samples from 35040 to  100k and use it to train the CONV Autoencoder model
+
+CONV_VAE_realize.py:use 35040 virtual samples to train the CONV_VAE model
+CONV_VAE_realize2.py:augment virtual samples from 35040 to  100k and use it to train the CONV_VAE model
