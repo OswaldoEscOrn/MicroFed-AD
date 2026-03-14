@@ -16,7 +16,7 @@ import json
 
 warnings.filterwarnings('ignore')
 
-# ====================== 1. 配置参数 ======================
+# ====================== 1. Configuration Parameters ======================
 DATA_DIR = r"D:\Oswaldo's surf project\Mixed_Real_Virtual_Database_Hourly\preprocessed_data_mixed"
 X_PATH = os.path.join(DATA_DIR, "X_windows.npy")
 SCALED_DF_PATH = os.path.join(DATA_DIR, "normalized_hourly_data.csv")
@@ -46,9 +46,9 @@ FEATURE_NAMES = [
 os.makedirs(VISUALIZATION_PATH, exist_ok=True)
 
 
-# ====================== 2. 自定义层 ======================
+# ====================== 2. Custom Layers ======================
 class Sampling(Layer):
-    """重参数化技巧层"""
+    """Reparameterization trick layer"""
 
     def call(self, inputs):
         z_mean, z_log_var = inputs
@@ -62,7 +62,7 @@ class Sampling(Layer):
 
 
 class VAELossLayer(Layer):
-    """VAE损失计算层"""
+    """VAE loss calculation layer"""
 
     def __init__(self, kl_weight=0.001, **kwargs):
         super(VAELossLayer, self).__init__(**kwargs)
@@ -74,10 +74,10 @@ class VAELossLayer(Layer):
     def call(self, inputs):
         x_true, x_pred, z_mean, z_log_var = inputs
 
-        # 计算重建损失 - 修复：移除不必要的缩放
-        reconstruction_loss = K.mean(K.abs(x_true - x_pred))  # 直接取平均值
+        # Calculate reconstruction loss - fixed: remove unnecessary scaling
+        reconstruction_loss = K.mean(K.abs(x_true - x_pred))  # Take mean directly
 
-        # 计算KL散度
+        # Calculate KL divergence
         kl_loss = -0.5 * K.sum(
             1 + z_log_var - K.square(z_mean) - K.exp(z_log_var),
             axis=1
@@ -101,9 +101,9 @@ class VAELossLayer(Layer):
         return input_shape[1]
 
 import time
-start_time=time.time()
+start_time = time.time()
 
-# ====================== 3. 数据加载 ======================
+# ====================== 3. Data Loading ======================
 print("Loading preprocessed sliding windows...")
 X = np.load(X_PATH)
 print(f"Loaded X shape: {X.shape}")
@@ -115,14 +115,14 @@ assert n_features == len(FEATURE_NAMES), f"Feature count mismatch: expected {len
 df_hourly = pd.read_csv(SCALED_DF_PATH, index_col=0, parse_dates=True)
 print(f"Hourly data shape: {df_hourly.shape}")
 
-# 检查数据范围
+# Check data range
 print(f"Data statistics:")
 print(f"  Min: {X.min():.4f}")
 print(f"  Max: {X.max():.4f}")
 print(f"  Mean: {X.mean():.4f}")
 print(f"  Std: {X.std():.4f}")
 
-# 时序分割
+# Time series split
 split_idx = int(0.85 * n_samples)
 X_train = X[:split_idx]
 X_val = X[split_idx:]
@@ -131,14 +131,14 @@ print(f"Training windows   : {X_train.shape}")
 print(f"Validation windows : {X_val.shape}")
 
 
-# ====================== 4. 构建Conv-VAE模型 ======================
+# ====================== 4. Build Conv-VAE Model ======================
 def build_conv_vae():
-    """构建一维卷积变分自编码器"""
+    """Build 1D convolutional variational autoencoder"""
     print("\nBuilding Conv-VAE model...")
 
     encoder_inputs = Input(shape=(TIMESTEPS, n_features), name='encoder_input')
 
-    # 编码器
+    # Encoder
     x = Conv1D(32, kernel_size=5, activation='relu', padding='same')(encoder_inputs)
     x = BatchNormalization()(x)
     x = MaxPooling1D(pool_size=2, padding='same')(x)
@@ -162,7 +162,7 @@ def build_conv_vae():
 
     encoder = Model(encoder_inputs, [z_mean, z_log_var, z], name='encoder')
 
-    # 解码器
+    # Decoder
     latent_inputs = Input(shape=(LATENT_DIM,), name='z_sampling')
     conv_shape = (TIMESTEPS // 8, 128)
 
@@ -181,12 +181,12 @@ def build_conv_vae():
     x = BatchNormalization()(x)
     x = UpSampling1D(size=2)(x)
 
-    # 使用sigmoid激活函数，假设数据在[0,1]范围内
+    # Use sigmoid activation, assuming data is in [0,1] range
     decoder_outputs = Conv1D(n_features, kernel_size=5, activation='sigmoid', padding='same')(x)
 
     decoder = Model(latent_inputs, decoder_outputs, name='decoder')
 
-    # 完整VAE模型
+    # Full VAE model
     z_mean, z_log_var, z = encoder(encoder_inputs)
     outputs = decoder(z)
     final_outputs = VAELossLayer(kl_weight=KL_WEIGHT)([encoder_inputs, outputs, z_mean, z_log_var])
@@ -205,7 +205,7 @@ def build_conv_vae():
     return vae, encoder, decoder, total_params
 
 
-# ====================== 5. 训练模型 ======================
+# ====================== 5. Train Model ======================
 print("\nBuilding / Loading Conv-VAE...")
 history = None
 
@@ -246,13 +246,13 @@ else:
     vae.save(MODEL_PATH)
     print(f"Model saved to {MODEL_PATH}")
 
-# ====================== 6. 计算验证损失 ======================
+# ====================== 6. Compute Validation Loss ======================
 print("\n" + "=" * 60)
 print("VALIDATION LOSS INFORMATION")
 print("=" * 60)
 
 if history is not None:
-    # 从训练历史获取验证损失
+    # Get validation loss from training history
     best_val_loss = min(history.history['val_loss'])
     best_epoch = np.argmin(history.history['val_loss']) + 1
     final_val_loss = history.history['val_loss'][-1]
@@ -264,14 +264,14 @@ if history is not None:
     print(f"  - Final validation loss: {final_val_loss:.6f}")
     print(f"  - Training epochs: {len(history.history['loss'])}")
 else:
-    # 对于加载的模型，重新计算验证损失
+    # For loaded model, re-evaluate validation loss
     print("Evaluating loaded model on validation set...")
     val_loss = vae.evaluate(X_val, X_val, batch_size=BATCH_SIZE, verbose=0)
     print(f"  - Validation loss: {val_loss:.6f}")
 
 print("=" * 60)
 
-# ====================== 7. 重建与异常检测 ======================
+# ====================== 7. Reconstruction and Anomaly Detection ======================
 print("\nComputing reconstruction errors...")
 recon_val = vae.predict(X_val, batch_size=BATCH_SIZE, verbose=0)
 mae_val = np.mean(np.abs(X_val - recon_val), axis=(1, 2))
@@ -294,10 +294,10 @@ df_anomalies = pd.DataFrame({
 
 print(f"Detected {anomaly_count} anomalous windows out of {len(anomaly_flags)} ({anomaly_ratio:.2f}%)")
 
-# ====================== 8. 创建可视化 ======================
+# ====================== 8. Create Visualizations ======================
 print("\nGenerating visualizations...")
 
-# 1. 训练历史图（如果有）
+# 1. Training history plot (if available)
 if history is not None:
     plt.figure(figsize=(12, 4))
 
@@ -320,7 +320,7 @@ if history is not None:
     plt.savefig(os.path.join(VISUALIZATION_PATH, 'conv_vae_training_history.png'), dpi=150, bbox_inches='tight')
     plt.close()
 
-# 2. 重建误差图
+# 2. Reconstruction error plot
 plt.figure(figsize=(14, 6))
 plt.plot(df_anomalies.index, df_anomalies['reconstruction_mae'],
          label='Reconstruction MAE', color='purple', alpha=0.7)
@@ -338,14 +338,14 @@ plt.savefig(os.path.join(VISUALIZATION_PATH, 'conv_vae_reconstruction_errors.png
 plt.close()
 
 
-# ====================== 8.1 综合可视化（可选，像CONV_AE那样） ======================
+# ====================== 8.1 Comprehensive Visualization (optional, similar to CONV_AE) ======================
 def create_comprehensive_visualization():
-    """创建综合可视化图表（类似CONV_AE）"""
+    """Create comprehensive visualization (similar to CONV_AE)"""
     print("\nCreating comprehensive visualization...")
 
     plt.figure(figsize=(20, 12))
 
-    # 1. 训练历史（如果有）
+    # 1. Training history (if available)
     if history is not None:
         ax1 = plt.subplot(2, 3, 1)
         epochs = range(1, len(history.history['loss']) + 1)
@@ -357,7 +357,7 @@ def create_comprehensive_visualization():
         ax1.legend()
         ax1.grid(True, alpha=0.3)
 
-    # 2. 重建误差分布
+    # 2. Reconstruction error distribution
     ax2 = plt.subplot(2, 3, 2 if history is None else 2)
     ax2.hist(mae_full, bins=50, alpha=0.7, color='skyblue', edgecolor='black', density=True)
     ax2.axvline(x=threshold, color='red', linestyle='--', linewidth=2,
@@ -368,7 +368,7 @@ def create_comprehensive_visualization():
     ax2.legend()
     ax2.grid(True, alpha=0.3)
 
-    # 3. 重建误差时间序列
+    # 3. Reconstruction error time series
     ax3 = plt.subplot(2, 3, 3 if history is None else 3)
     ax3.plot(df_anomalies.index, df_anomalies['reconstruction_mae'],
              label='Reconstruction MAE', color='purple', alpha=0.7, linewidth=1)
@@ -387,7 +387,7 @@ def create_comprehensive_visualization():
     ax3.legend(loc='upper right', fontsize=9)
     ax3.grid(True, alpha=0.3)
 
-    # 4. 模型参数对比
+    # 4. Model parameter comparison
     ax4 = plt.subplot(2, 3, 4 if history is None else 4)
     models = ['LSTM-AE', 'Conv-AE', 'Conv-VAE']
     params = [29124, 7892, total_params]
@@ -398,13 +398,13 @@ def create_comprehensive_visualization():
     ax4.set_ylabel('Number of Parameters')
     ax4.grid(True, alpha=0.3, axis='y')
 
-    # 添加数值标签
+    # Add value labels
     for bar, param in zip(bars, params):
         height = bar.get_height()
         ax4.text(bar.get_x() + bar.get_width() / 2, height + max(params) * 0.05,
                  f'{param:,}', ha='center', va='bottom', fontsize=9)
 
-    # 5. 特征级图（前7天）
+    # 5. Feature-level plot (first 7 days)
     ax5 = plt.subplot(2, 3, 5 if history is None else 5)
     n_plot = PLOT_DAYS * 24
     plot_df = df_hourly.iloc[:n_plot].copy()
@@ -423,7 +423,7 @@ def create_comprehensive_visualization():
         ax5.legend(loc='upper right')
         ax5.grid(True, alpha=0.3)
 
-    # 6. 性能总结文本
+    # 6. Performance summary text
     ax6 = plt.subplot(2, 3, 6 if history is None else 6)
     ax6.axis('off')
 
@@ -464,28 +464,28 @@ KL Weight: {KL_WEIGHT}
     return save_path
 
 
-# 调用综合可视化函数
+# Call the comprehensive visualization function
 comprehensive_path = create_comprehensive_visualization()
 
-# 计算总运行时间
+# Calculate total runtime
 end_time = time.time()
 total_time_seconds = end_time - start_time
 total_time_minutes = total_time_seconds / 60
 total_time_hours = total_time_minutes / 60
 
-# 输出总运行时间
+# Output total runtime
 print(f"\n⏱️  Total Execution Time:")
 print(f"  Total time: {total_time_seconds:.2f} seconds")
 print(f"            : {total_time_minutes:.2f} minutes")
 print(f"            : {total_time_hours:.2f} hours")
 
 
-# ====================== 9. 输出总结报告 ======================
+# ====================== 9. Output Summary Report ======================
 print("\n" + "=" * 80)
 print("CONVOLUTIONAL VARIATIONAL AUTOENCODER - PERFORMANCE SUMMARY")
 print("=" * 80)
 
-# 获取验证损失信息
+# Get validation loss information
 if history is not None:
     best_val_loss = min(history.history['val_loss'])
     final_val_loss = history.history['val_loss'][-1]
@@ -524,9 +524,9 @@ print(summary_text)
 print("=" * 80)
 
 
-# ====================== 10. 保存结果为JSON文件 ======================
+# ====================== 10. Save Results as JSON File ======================
 def save_results_vae(results_dict, save_dir):
-    """保存VAE训练结果到JSON文件"""
+    """Save VAE training results to JSON file"""
     os.makedirs(save_dir, exist_ok=True)
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     results_path = os.path.join(save_dir, f"conv_vae_results_{timestamp}.json")
@@ -538,7 +538,7 @@ def save_results_vae(results_dict, save_dir):
     return results_path
 
 
-# 构建结果字典
+# Build results dictionary
 results_dict = {
     'model_name': 'Conv-VAE',
     'timestamp': datetime.datetime.now().strftime("%Y%m%d_%H%M%S"),
@@ -572,24 +572,24 @@ results_dict = {
     'feature_names': FEATURE_NAMES
 }
 
-# 添加验证损失信息
+# Add validation loss information
 if history is not None:
     results_dict['validation_results'] = {
         'best_val_loss': float(min(history.history['val_loss'])),
         'final_val_loss': float(history.history['val_loss'][-1]),
         'final_train_loss': float(history.history['loss'][-1])
-}
+    }
 else:
     val_loss = vae.evaluate(X_val, X_val, batch_size=BATCH_SIZE, verbose=0)
     results_dict['validation_results'] = {
         'validation_loss': float(val_loss)
     }
 
-# 保存JSON文件
+# Save JSON file
 models_dir = r"D:\Oswaldo's surf project\Mixed_Real_Virtual_Database_Hourly\models"
 results_path = save_results_vae(results_dict, models_dir)
 
-# ====================== 11. 最终输出 ======================
+# ====================== 11. Final Output ======================
 print(f"\n📊 Output Files:")
 print(f"  - Model: {MODEL_PATH}")
 print(f"  - Visualizations directory: {VISUALIZATION_PATH}")
