@@ -1,5 +1,5 @@
 final_preprocessed_data_augmentation.py：use the 30% anomaly fixed dataset for data augmentation and increase the data to 35040
 final_preprocessed_data_augmentation_100k.py:use the 30% anomaly 35040 dataset for data augmentation and increase the data to 100k
 
-final_preprocessed_data_augmentation_100k.py： form the x_windows of 100k dataset for model training
+100k_data_preparation_x_windows_formed.py： form the x_windows of 100k dataset for model training
 data_preparation_x_windows_formed.py:form the x_windows of 35040 dataset for model training
