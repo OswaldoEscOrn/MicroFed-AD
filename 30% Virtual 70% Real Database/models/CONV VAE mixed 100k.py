@@ -17,9 +17,9 @@ from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 warnings.filterwarnings('ignore')
 
 
-# ====================== 1. 自定义层 ======================
+# ====================== 1. Custom Layers ======================
 class Sampling(Layer):
-    """重参数化技巧层"""
+    """Reparameterization trick layer"""
 
     def call(self, inputs):
         z_mean, z_log_var = inputs
@@ -33,7 +33,7 @@ class Sampling(Layer):
 
 
 class VAELossLayer(Layer):
-    """VAE损失计算层"""
+    """VAE loss calculation layer"""
 
     def __init__(self, kl_weight=0.001, **kwargs):
         super(VAELossLayer, self).__init__(**kwargs)
@@ -45,10 +45,10 @@ class VAELossLayer(Layer):
     def call(self, inputs):
         x_true, x_pred, z_mean, z_log_var = inputs
 
-        # 计算重建损失
+        # Compute reconstruction loss
         reconstruction_loss = K.mean(K.abs(x_true - x_pred))
 
-        # 计算KL散度
+        # Compute KL divergence
         kl_loss = -0.5 * K.sum(
             1 + z_log_var - K.square(z_mean) - K.exp(z_log_var),
             axis=1
@@ -72,21 +72,23 @@ class VAELossLayer(Layer):
         return input_shape[1]
 
 
-# ====================== 2. 数据加载函数 ======================
+# ====================== 2. Data loading function ======================
 def load_data():
-    """加载数据，使用新的文件路径"""
+    """
+    Load data using new file paths
+    """
     print("=" * 80)
     print("CONVOLUTIONAL VARIATIONAL AUTOENCODER TRAINING PIPELINE")
     print("=" * 80)
 
     print("\n📂 Loading preprocessed sliding windows...")
 
-    # 新的配置参数
+    # New configuration parameters
     DATA_DIR = r"D:\Oswaldo's surf project\Mixed_Real_Virtual_Database_Hourly\100k_windows_forming"
     X_PATH = os.path.join(DATA_DIR, "x_windows_100k.npy")
     SCALED_DF_PATH = os.path.join(DATA_DIR, "processed_time_series_augmented_100k.csv")
 
-    # 加载窗口数据
+    # Load window data
     if not os.path.exists(X_PATH):
         raise FileNotFoundError(f"X_windows.npy not found at {X_PATH}")
 
@@ -96,18 +98,18 @@ def load_data():
     n_samples, timesteps, n_features = X.shape
     print(f"Data dimensions: {n_samples} samples, {timesteps} timesteps, {n_features} features")
 
-    # 加载小时数据用于后续分析
+    # Load hourly data for subsequent analysis
     print("\n📂 Loading preprocessed time series data...")
     if os.path.exists(SCALED_DF_PATH):
         df_hourly = pd.read_csv(SCALED_DF_PATH, index_col=0, parse_dates=True)
         print(f"Hourly data shape: {df_hourly.shape}")
 
-        # 获取实际的特征名称
+        # Get actual feature names
         actual_features = df_hourly.columns.tolist()
         print(f"Actual features in data: {actual_features}")
     else:
         print(f"Warning: {SCALED_DF_PATH} not found, creating placeholder hourly data")
-        # 创建占位数据
+        # Create placeholder data
         n_hours = n_samples + timesteps - 1
         date_range = pd.date_range(start='2013-03-01', periods=n_hours, freq='H')
         df_hourly = pd.DataFrame(
@@ -117,7 +119,7 @@ def load_data():
         )
         actual_features = df_hourly.columns.tolist()
 
-    # 检查数据范围
+    # Check data range
     print(f"\n📊 Data statistics:")
     print(f"  Min: {X.min():.4f}")
     print(f"  Max: {X.max():.4f}")
@@ -127,9 +129,9 @@ def load_data():
     return X, df_hourly, actual_features, timesteps, n_features
 
 
-# ====================== 3. 数据划分函数 ======================
+# ====================== 3. Data splitting function ======================
 def split_data(X, split_ratio=0.85):
-    """数据划分"""
+    """Data splitting"""
     n_samples = X.shape[0]
     split_idx = int(split_ratio * n_samples)
 
@@ -144,9 +146,9 @@ def split_data(X, split_ratio=0.85):
     return X_train, X_val
 
 
-# ====================== 4. 构建Conv-VAE模型 ======================
+# ====================== 4. Build Conv-VAE model ======================
 def build_conv_vae(timesteps, n_features, latent_dim=16, kl_weight=0.001):
-    """构建一维卷积变分自编码器"""
+    """Build 1D convolutional variational autoencoder"""
     print(f"\n🔧 Building Conv-VAE model:")
     print(f"  Input shape: ({timesteps}, {n_features})")
     print(f"  Latent dimension: {latent_dim}")
@@ -154,7 +156,7 @@ def build_conv_vae(timesteps, n_features, latent_dim=16, kl_weight=0.001):
 
     encoder_inputs = Input(shape=(timesteps, n_features), name='encoder_input')
 
-    # 编码器
+    # Encoder
     x = Conv1D(32, kernel_size=5, activation='relu', padding='same')(encoder_inputs)
     x = BatchNormalization()(x)
     x = MaxPooling1D(pool_size=2, padding='same')(x)
@@ -178,9 +180,9 @@ def build_conv_vae(timesteps, n_features, latent_dim=16, kl_weight=0.001):
 
     encoder = Model(encoder_inputs, [z_mean, z_log_var, z], name='encoder')
 
-    # 解码器
+    # Decoder
     latent_inputs = Input(shape=(latent_dim,), name='z_sampling')
-    conv_shape = (timesteps // 8, 128)  # 经过3次池化，每次除以2
+    conv_shape = (timesteps // 8, 128)  # After 3 pooling layers, each dividing by 2
 
     x = Dense(int(np.prod(conv_shape)), activation='relu')(latent_inputs)
     x = Reshape(conv_shape)(x)
@@ -197,22 +199,22 @@ def build_conv_vae(timesteps, n_features, latent_dim=16, kl_weight=0.001):
     x = BatchNormalization()(x)
     x = UpSampling1D(size=2)(x)
 
-    # 使用sigmoid激活函数
+    # Use sigmoid activation
     decoder_outputs = Conv1D(n_features, kernel_size=5, activation='sigmoid', padding='same')(x)
 
     decoder = Model(latent_inputs, decoder_outputs, name='decoder')
 
-    # 完整VAE模型
+    # Full VAE model
     z_mean, z_log_var, z = encoder(encoder_inputs)
     outputs = decoder(z)
     final_outputs = VAELossLayer(kl_weight=kl_weight)([encoder_inputs, outputs, z_mean, z_log_var])
 
     vae = Model(encoder_inputs, final_outputs, name='conv_vae')
 
-    # 编译模型
+    # Compile model
     vae.compile(optimizer=Adam(learning_rate=0.001))
 
-    # 计算参数
+    # Count parameters
     total_params = vae.count_params()
     trainable_params = np.sum([np.prod(v.shape) for v in vae.trainable_weights])
     non_trainable_params = total_params - trainable_params
@@ -225,15 +227,15 @@ def build_conv_vae(timesteps, n_features, latent_dim=16, kl_weight=0.001):
     return vae, encoder, decoder, total_params
 
 
-# ====================== 5. 模型训练 ======================
+# ====================== 5. Model training ======================
 def train_model(vae, X_train, X_val, epochs=80, batch_size=128, patience=12):
-    """训练模型"""
+    """Train the model"""
     print(f"\n🚀 Starting training...")
 
-    # 显示模型摘要
+    # Show model summary
     vae.summary()
 
-    # 回调函数
+    # Callbacks
     callbacks = [
         EarlyStopping(
             monitor='val_loss',
@@ -254,7 +256,7 @@ def train_model(vae, X_train, X_val, epochs=80, batch_size=128, patience=12):
     print(f"  Batch Size: {batch_size}")
     print(f"  Max Epochs: {epochs}")
 
-    # 训练模型
+    # Train the model
     history = vae.fit(
         X_train, X_train,
         validation_data=(X_val, X_val),
@@ -267,24 +269,24 @@ def train_model(vae, X_train, X_val, epochs=80, batch_size=128, patience=12):
     return history
 
 
-# ====================== 6. 异常检测 ======================
+# ====================== 6. Anomaly detection ======================
 def detect_anomalies(vae, X, X_val, threshold_percentile=95, batch_size=128):
-    """异常检测"""
+    """Anomaly detection"""
     print("\n🔍 Computing reconstruction errors...")
 
-    # 验证集重建误差
+    # Validation set reconstruction error
     reconstructions_val = vae.predict(X_val, batch_size=batch_size, verbose=0)
     mae_val = np.mean(np.abs(X_val - reconstructions_val), axis=(1, 2))
 
-    # 计算阈值
+    # Calculate threshold
     threshold = np.percentile(mae_val, threshold_percentile)
     print(f"Validation (assumed normal) MAE {threshold_percentile}th percentile threshold: {threshold:.6f}")
 
-    # 全数据集重建误差
+    # Full dataset reconstruction error
     reconstructions_full = vae.predict(X, batch_size=batch_size, verbose=0)
     mae_full = np.mean(np.abs(X - reconstructions_full), axis=(1, 2))
 
-    # 检测异常
+    # Detect anomalies
     anomaly_flags = (mae_full > threshold).astype(int)
     anomaly_count = np.sum(anomaly_flags)
     anomaly_ratio = anomaly_count / len(mae_full) * 100
@@ -294,22 +296,22 @@ def detect_anomalies(vae, X, X_val, threshold_percentile=95, batch_size=128):
     return mae_full, anomaly_flags, threshold, reconstructions_full
 
 
-# ====================== 7. 可视化函数 ======================
+# ====================== 7. Visualization function ======================
 def visualize_results(df_hourly, mae_full, anomaly_flags, threshold,
                       X_original=None, X_reconstructed=None, history=None,
                       actual_features=None, model_name="Conv-VAE", timesteps=24):
-    """可视化结果"""
+    """Visualize results"""
     print("\n📊 Generating visualizations...")
 
-    # 设置保存路径
+    # Set save path
     VISUALIZATION_SAVE_DIR = r"D:\Oswaldo's surf project\Mixed_Real_Virtual_Database_Hourly\visualizations"
     os.makedirs(VISUALIZATION_SAVE_DIR, exist_ok=True)
 
-    # 创建综合可视化图表
+    # Create comprehensive visualization
     plt.style.use('seaborn-v0_8-darkgrid')
     fig = plt.figure(figsize=(20, 15))
 
-    # 1. 训练历史
+    # 1. Training history
     if history is not None:
         ax1 = plt.subplot(3, 3, 1)
         epochs = range(1, len(history.history['loss']) + 1)
@@ -321,10 +323,10 @@ def visualize_results(df_hourly, mae_full, anomaly_flags, threshold,
         ax1.legend()
         ax1.grid(True, alpha=0.3)
 
-    # 2. 重建误差时间序列
+    # 2. Reconstruction error time series
     ax2 = plt.subplot(3, 3, 2 if history is None else 2)
 
-    # 创建时间索引
+    # Create time indices
     if len(df_hourly) >= len(mae_full):
         time_indices = df_hourly.index[timesteps - 1: timesteps - 1 + len(mae_full)]
     else:
@@ -335,7 +337,7 @@ def visualize_results(df_hourly, mae_full, anomaly_flags, threshold,
     ax2.axhline(threshold, color='red', linestyle='--', linewidth=2,
                 label=f'Threshold ({threshold:.5f})')
 
-    # 标记异常点
+    # Mark anomaly points
     anomaly_indices = np.where(anomaly_flags == 1)[0]
     if len(time_indices) == len(mae_full):
         ax2.scatter(time_indices[anomaly_indices], mae_full[anomaly_indices],
@@ -348,7 +350,7 @@ def visualize_results(df_hourly, mae_full, anomaly_flags, threshold,
     ax2.legend(loc='upper right', fontsize=10)
     ax2.grid(True, alpha=0.3)
 
-    # 3. 重建误差分布
+    # 3. Reconstruction error distribution
     ax3 = plt.subplot(3, 3, 3 if history is None else 3)
     n_bins = min(50, len(mae_full) // 20)
     ax3.hist(mae_full, bins=n_bins, alpha=0.7, color='skyblue',
@@ -356,7 +358,7 @@ def visualize_results(df_hourly, mae_full, anomaly_flags, threshold,
     ax3.axvline(x=threshold, color='red', linestyle='--', linewidth=2,
                 label=f'Threshold ({threshold:.4f})')
 
-    # 添加高斯分布拟合
+    # Add Gaussian distribution fit
     from scipy.stats import norm
     mu, std = norm.fit(mae_full)
     xmin, xmax = ax3.get_xlim()
@@ -371,13 +373,13 @@ def visualize_results(df_hourly, mae_full, anomaly_flags, threshold,
     ax3.legend()
     ax3.grid(True, alpha=0.3)
 
-    # 4. 原始vs重建对比（第一个样本）
+    # 4. Original vs reconstruction comparison (first sample)
     ax4 = plt.subplot(3, 3, 4 if history is None else 4)
     if X_original is not None and X_reconstructed is not None and len(X_original) > 0:
         sample_idx = 0
         time_steps = range(timesteps)
 
-        # 绘制第一个特征
+        # Plot first feature
         if actual_features and len(actual_features) > 0:
             feature_name = actual_features[0]
         else:
@@ -396,10 +398,10 @@ def visualize_results(df_hourly, mae_full, anomaly_flags, threshold,
         ax4.legend()
         ax4.grid(True, alpha=0.3)
 
-    # 5. 损失分量（如果有历史）
+    # 5. Loss components (if history available)
     ax5 = plt.subplot(3, 3, 5 if history is None else 5)
     if history is not None:
-        # 尝试从历史中获取重构损失和KL损失
+        # Try to get reconstruction loss and KL loss from history
         if 'recon_loss' in history.history and 'kl_loss' in history.history:
             ax5.plot(epochs, history.history['recon_loss'],
                      label='Reconstruction Loss', linewidth=2, color='green')
@@ -416,7 +418,7 @@ def visualize_results(df_hourly, mae_full, anomaly_flags, threshold,
             ax5.set_title('Loss Components', fontsize=14, fontweight='bold')
             ax5.axis('off')
 
-    # 6. 异常检测性能分析
+    # 6. Anomaly detection performance analysis
     ax6 = plt.subplot(3, 3, 6 if history is None else 6)
     thresholds = np.percentile(mae_full, range(90, 100))
     anomaly_rates = []
@@ -434,7 +436,7 @@ def visualize_results(df_hourly, mae_full, anomaly_flags, threshold,
     ax6.legend()
     ax6.grid(True, alpha=0.3)
 
-    # 7. 误差箱线图
+    # 7. Error boxplot
     ax7 = plt.subplot(3, 3, 7 if history is None else 7)
     if len(anomaly_indices) > 0:
         normal_errors = mae_full[anomaly_flags == 0]
@@ -454,10 +456,10 @@ def visualize_results(df_hourly, mae_full, anomaly_flags, threshold,
         ax7.set_ylabel('Reconstruction MAE', fontsize=12)
         ax7.grid(True, alpha=0.3, axis='y')
 
-    # 8. 模型比较
+    # 8. Model comparison
     ax8 = plt.subplot(3, 3, 8 if history is None else 8)
     models = ['LSTM-AE', 'Conv-AE', 'Conv-VAE']
-    # 近似参数数量（根据实际训练调整）
+    # Approximate parameter counts (adjust based on actual training)
     if X_original is not None:
         conv_vae_params = history.model.count_params() if history else 'N/A'
         params = [29124, 7892, conv_vae_params if isinstance(conv_vae_params, int) else 12000]
@@ -468,13 +470,13 @@ def visualize_results(df_hourly, mae_full, anomaly_flags, threshold,
         ax8.set_ylabel('Number of Parameters', fontsize=12)
         ax8.grid(True, alpha=0.3, axis='y')
 
-        # 添加数值标签
+        # Add numerical labels
         for bar, param in zip(bars, params):
             if isinstance(param, int):
                 ax8.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + max(params) * 0.05,
                          f'{param:,}', ha='center', va='bottom', fontsize=9)
 
-    # 9. 性能总结
+    # 9. Performance summary
     ax9 = plt.subplot(3, 3, 9 if history is None else 9)
     ax9.axis('off')
 
@@ -505,7 +507,7 @@ KL Weight: 0.001
 
     plt.tight_layout()
 
-    # 保存图表
+    # Save figure
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     save_path = os.path.join(VISUALIZATION_SAVE_DIR, f"100k_conv_vae_visualization_{timestamp}.png")
     plt.savefig(save_path, dpi=150, bbox_inches='tight')
@@ -516,9 +518,9 @@ KL Weight: 0.001
     return save_path
 
 
-# ====================== 7.1 类型转换辅助函数 ======================
+# ====================== 7.1 Helper function for type conversion ======================
 def convert_numpy_types(obj):
-    """递归转换numpy类型为Python原生类型以便JSON序列化"""
+    """Recursively convert numpy types to Python native types for JSON serialization"""
     if isinstance(obj, dict):
         return {k: convert_numpy_types(v) for k, v in obj.items()}
     elif isinstance(obj, list):
@@ -536,16 +538,16 @@ def convert_numpy_types(obj):
     elif obj is None:
         return None
     else:
-        # 对于其他类型，尝试转换为字符串
+        # For other types, try to convert to string
         try:
             return str(obj)
         except:
             return f"<{type(obj).__name__}>"
 
 
-# ====================== 8. 保存结果 ======================
+# ====================== 8. Save results ======================
 def save_results(results_dict, save_dir):
-    """保存训练结果到JSON文件"""
+    """Save training results to a JSON file"""
     os.makedirs(save_dir, exist_ok=True)
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -558,10 +560,10 @@ def save_results(results_dict, save_dir):
     return results_path
 
 
-# ====================== 9. 主流程 ======================
+# ====================== 9. Main workflow ======================
 def main():
-    """主函数"""
-    # 设置TensorFlow优化
+    """Main function"""
+    # Set TensorFlow optimizations
     os.environ['TF_ENABLE_ONEDNN_OPTS'] = '1'
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
@@ -570,10 +572,10 @@ def main():
     print("=" * 80)
 
     import time
-    start_time=time.time()
+    start_time = time.time()
 
     try:
-        # 1. 加载数据
+        # 1. Load data
         X, df_hourly, actual_features, timesteps, n_features = load_data()
 
         print(f"\n📊 Data Information:")
@@ -581,10 +583,10 @@ def main():
         print(f"  Timesteps per window: {timesteps}")
         print(f"  Feature names: {actual_features}")
 
-        # 2. 划分数据
+        # 2. Split data
         X_train, X_val = split_data(X, split_ratio=0.85)
 
-        # 3. 构建模型
+        # 3. Build model
         print("\n" + "=" * 80)
         print("MODEL CONSTRUCTION")
         print("=" * 80)
@@ -596,7 +598,7 @@ def main():
             kl_weight=0.001
         )
 
-        # 4. 训练模型
+        # 4. Train model
         print("\n" + "=" * 80)
         print("MODEL TRAINING")
         print("=" * 80)
@@ -608,7 +610,7 @@ def main():
             patience=12
         )
 
-        # 计算最佳验证损失
+        # Calculate best validation loss
         if history is not None and 'val_loss' in history.history:
             best_val_loss = min(history.history['val_loss'])
             best_epoch = np.argmin(history.history['val_loss']) + 1
@@ -628,28 +630,28 @@ def main():
             best_val_loss = history.history['val_loss'][-1] if history else None
             best_epoch = None
 
-        # 5. 保存模型
+        # 5. Save model
         model_save_dir = r"D:\Oswaldo's surf project\Mixed_Real_Virtual_Database_Hourly\models"
         os.makedirs(model_save_dir, exist_ok=True)
 
-        # 保存完整VAE模型
+        # Save full VAE model
         vae_path = os.path.join(model_save_dir, "100k_conv_vae_autoencoder.h5")
 
-        # 注意：保存和加载自定义层模型需要指定custom_objects
+        # Note: When saving and loading custom layer models, you need to specify custom_objects
         vae.save(vae_path, save_format='h5')
         print(f"\n💾 Model saved to: {vae_path}")
 
-        # 保存编码器
+        # Save encoder
         encoder_path = os.path.join(model_save_dir, "100k_conv_vae_encoder.h5")
         encoder.save(encoder_path, save_format='h5')
         print(f"💾 Encoder saved to: {encoder_path}")
 
-        # 保存解码器
+        # Save decoder
         decoder_path = os.path.join(model_save_dir, "100k_conv_vae_decoder.h5")
         decoder.save(decoder_path, save_format='h5')
         print(f"💾 Decoder saved to: {decoder_path}")
 
-        # 6. 异常检测
+        # 6. Anomaly detection
         print("\n" + "=" * 80)
         print("ANOMALY DETECTION")
         print("=" * 80)
@@ -658,7 +660,7 @@ def main():
             vae, X, X_val, threshold_percentile=95, batch_size=128
         )
 
-        # 7. 可视化
+        # 7. Visualization
         print("\n" + "=" * 80)
         print("VISUALIZATION")
         print("=" * 80)
@@ -669,19 +671,19 @@ def main():
             actual_features=actual_features, model_name="Conv-VAE", timesteps=timesteps
         )
 
-        # 计算总运行时间
+        # Calculate total execution time
         end_time = time.time()
         total_time_seconds = end_time - start_time
         total_time_minutes = total_time_seconds / 60
         total_time_hours = total_time_minutes / 60
 
-        # 输出总运行时间
+        # Output total execution time
         print(f"\n⏱️  Total Execution Time:")
         print(f"  Total time: {total_time_seconds:.2f} seconds")
         print(f"            : {total_time_minutes:.2f} minutes")
         print(f"            : {total_time_hours:.2f} hours")
 
-        # 8. 准备结果字典
+        # 8. Prepare results dictionary
         results_dict = {
             'model_name': 'Conv-VAE',
             'timestamp': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
@@ -720,13 +722,13 @@ def main():
             }
         }
 
-        # 转换numpy类型为Python原生类型
+        # Convert numpy types to Python native types
         results_dict = convert_numpy_types(results_dict)
 
-        # 9. 保存结果
+        # 9. Save results
         results_path = save_results(results_dict, model_save_dir)
 
-        # 10. 打印总结报告
+        # 10. Print summary report
         print("\n" + "=" * 80)
         print("SUMMARY REPORT")
         print("=" * 80)
@@ -763,12 +765,12 @@ def main():
     return 0
 
 
-# ====================== 执行主函数 ======================
+# ====================== Execute main function ======================
 if __name__ == "__main__":
-    # 设置matplotlib
+    # Set matplotlib
     plt.rcParams['axes.unicode_minus'] = False
     plt.rcParams['figure.dpi'] = 100
 
-    # 运行主函数
+    # Run main function
     exit_code = main()
     exit(exit_code)
