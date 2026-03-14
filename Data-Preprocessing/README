@@ -1,3 +1,4 @@
 aircraft_data_handle.py is my noise data preprocessing 
 data_handle.py is my PM2.5 data preprocessing
 overall Merge&DeepAE input process.py： generate 35040 virtual samples using my aircraft and PM2.5  dataset
+virtual samples reshape.py:Simplified features to 4 per hour，(which is aligned with real dataset) to enable mixed real&virtual dataset's generation.
