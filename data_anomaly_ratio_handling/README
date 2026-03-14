@@ -1,7 +1,10 @@
 combined_data_anomaly_detection.py: detect the original anomaly  data ratio in the 100% real dataset
+
 combined_data_reconstruction.py： reconstruct the dataset until it has 30% anomaly data
-combined_data_reconstruction_70%_anomaly.py： reconstruct the dataset until it has 70% anomaly data
+reconstruction_data_test.py：detects and removes duplicate rows (based on timestamp), keeps the first occurrence for each timestamp, and verifies that the cleaned data has a strict hourly time step.
 combined_data_reconstruction_correctpreprocessing.py：preprocesses a reconstructed dataset ( with a ~30% anomaly ratio)，to be ready for AE models
 
-reconstruction_data_70%_fixed.py:etects and removes duplicate rows (based on timestamp), keeps the first occurrence for each timestamp, and verifies that the cleaned data has a strict hourly time step. 
+
+combined_data_reconstruction_70%_anomaly.py： reconstruct the dataset until it has 70% anomaly data
+reconstruction_data_70%_fixed.py:detects and removes duplicate rows (based on timestamp), keeps the first occurrence for each timestamp, and verifies that the cleaned data has a strict hourly time step. 
 70%_anomaly_reconstruction_data_ preprocessing.py：preprocesses a reconstructed dataset ( with a ~70% anomaly ratio)，to be ready for AE models
