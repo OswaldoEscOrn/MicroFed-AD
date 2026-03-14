@@ -5,18 +5,18 @@ from sklearn.preprocessing import StandardScaler
 
 # List of all PRSA air quality files (based on provided documents)
 air_files = [
-    'PRSA_Data_Tiantan_20130301-20170228.csv',
-    'PRSA_Data_Wanshouxigong_20130301-20170228.csv',
-    'PRSA_Data_Huairou_20130301-20170228.csv',
-    'PRSA_Data_Aotizhongxin_20130301-20170228.csv',
-    'PRSA_Data_Wanliu_20130301-20170228.csv',
-    'PRSA_Data_Guanyuan_20130301-20170228.csv',
-    'PRSA_Data_Shunyi_20130301-20170228.csv',
-    'PRSA_Data_Gucheng_20130301-20170228.csv',
-    'PRSA_Data_Changping_20130301-20170228.csv',
-    'PRSA_Data_Nongzhanguan_20130301-20170228.csv',
-    'PRSA_Data_Dongsi_20130301-20170228.csv',
-    'PRSA_Data_Dingling_20130301-20170228.csv'
+    r"D:\Oswaldo's surf project\DR O's database\PRSA_Data_Aotizhongxin_20130301-20170228.csv",
+    r"D:\Oswaldo's surf project\DR O's database\PRSA_Data_Wanshouxigong_20130301-20170228.csv",
+    r"D:\Oswaldo's surf project\DR O's database\PRSA_Data_Huairou_20130301-20170228.csv",
+    r"D:\Oswaldo's surf project\DR O's database\PRSA_Data_Aotizhongxin_20130301-20170228.csv",
+    r"D:\Oswaldo's surf project\DR O's database\PRSA_Data_Wanliu_20130301-20170228.csv",
+    r"D:\Oswaldo's surf project\DR O's database\PRSA_Data_Guanyuan_20130301-20170228.csv",
+    r"D:\Oswaldo's surf project\DR O's database\PRSA_Data_Shunyi_20130301-20170228.csv",
+    r"D:\Oswaldo's surf project\DR O's database\PRSA_Data_Gucheng_20130301-20170228.csv",
+    r"D:\Oswaldo's surf project\DR O's database\PRSA_Data_Changping_20130301-20170228.csv",
+    r"D:\Oswaldo's surf project\DR O's database\PRSA_Data_Nongzhanguan_20130301-20170228.csv",
+    r"D:\Oswaldo's surf project\DR O's database\PRSA_Data_Dongsi_20130301-20170228.csv",
+    r"D:\Oswaldo's surf project\DR O's database\PRSA_Data_Dingling_20130301-20170228.csv"
 ]
 
 # Load and process air data
@@ -47,8 +47,18 @@ avg_air_df = avg_air_df.reindex(full_time_range, method='ffill')
 scaler = StandardScaler()
 avg_air_df['avg_PM2.5_normalized'] = scaler.fit_transform(avg_air_df[['avg_PM2.5']])
 
+import joblib
+output_dir = r"D:\Oswaldo's surf project\DR O's database\preprocessed_data"
+os.makedirs(output_dir, exist_ok=True)
+
+print(f"avg_PM2.5 scaler mean = {scaler.mean_[0]:.10f}")
+print(f"avg_PM2.5 scaler std  = {np.sqrt(scaler.var_[0]):.10f}")
+
+joblib.dump(scaler, os.path.join(output_dir, "scaler_avg_PM2.5.pkl"))
+print("Saved scaler_avg_PM2.5.pkl")
+
 # Load noise data
-noise_df = pd.read_csv('UrbanSound8K.csv')
+noise_df = pd.read_csv(r"D:\Oswaldo's surf project\DR O's database\UrbanSound8K.csv")
 
 # Compute duration
 noise_df['duration'] = noise_df['end'] - noise_df['start']
@@ -77,8 +87,8 @@ combined_df = avg_air_df.join(noise_agg)
 combined_df = combined_df.fillna(0)
 
 # Save to CSV
-combined_df.to_csv('combined_environmental_data.csv')
+combined_df.to_csv(r"D:\Oswaldo's surf project\DR O's database\combined_environmental_data.csv")
 
 # Print confirmation
-print("Combined data saved to 'combined_environmental_data.csv'")
+print("Combined data saved to r'D:\Oswaldo's surf project\DR O's database\combined_environmental_data.csv'")
 print(combined_df.head())
