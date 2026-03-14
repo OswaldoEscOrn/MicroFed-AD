@@ -3,74 +3,74 @@ import random
 import os
 import numpy as np
 
-# ==================== 配置路径 ====================
+# ==================== Configuration paths ====================
 input_path = r"D:\Oswaldo's surf project\My Database\PM2.5\PM25_data.csv"
 output_path = r"D:\Oswaldo's surf project\My Database\PM2.5\random_city3PM25_data.csv"
 
-# 确保输出目录存在
+# Ensure output directory exists
 os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-# ==================== 1. 读取原始数据 ====================
-print("🔍 读取原始数据...")
-df = pd.read_csv(input_path, encoding='gbk')  # 原始文件含中文，使用GBK编码
-print(f"原始数据形状: {df.shape}")
+# ==================== 1. Load original data ====================
+print("🔍 Loading original data...")
+df = pd.read_csv(input_path, encoding='gbk')  # Original file contains Chinese, use GBK encoding
+print(f"Original data shape: {df.shape}")
 
-# 获取所有列名
+# Get all column names
 all_columns = df.columns.tolist()
 date_column = all_columns[0]
 hour_column = all_columns[1]
-city_columns = all_columns[2:]  # 第三列开始为城市
+city_columns = all_columns[2:]  # Starting from third column are cities
 
-print(f"日期列: {date_column}, 小时列: {hour_column}")
-print(f"共有 {len(city_columns)} 个城市列")
+print(f"Date column: {date_column}, Hour column: {hour_column}")
+print(f"Total {len(city_columns)} city columns")
 
-# ==================== 2. 随机选择5个城市 ====================
+# ==================== 2. Randomly select 5 cities ====================
 selected_cities = random.sample(city_columns, 5)
-print(f"\n🎲 随机选择的5个城市: {selected_cities}")
+print(f"\n🎲 Randomly selected 5 cities: {selected_cities}")
 
-# 构建包含date、hour和5个城市的新DataFrame
+# Create a new DataFrame with date, hour and the 5 selected cities
 selected_columns = [date_column, hour_column] + selected_cities
 df_selected = df[selected_columns].copy()
-print(f"选择后数据形状: {df_selected.shape}")
+print(f"Data shape after selection: {df_selected.shape}")
 
-# ==================== 3. 构建timestamp列 ====================
-print("\n⏰ 构建timestamp列...")
-# 将date转换为字符串，hour补零成两位，合并后解析为datetime
+# ==================== 3. Construct timestamp column ====================
+print("\n⏰ Constructing timestamp column...")
+# Convert date to string, zero-pad hour to two digits, combine and parse as datetime
 df_selected['timestamp'] = pd.to_datetime(
     df_selected[date_column].astype(str) + df_selected[hour_column].astype(str).str.zfill(2),
     format='%Y%m%d%H'
 )
-# 格式化为易读的字符串形式（可选，便于保存查看）
+# Format as readable string (optional, for easier viewing when saved)
 df_selected['timestamp'] = df_selected['timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S')
 
-# 重排列，将timestamp放在第一列
+# Rearrange columns: put timestamp first
 cols = ['timestamp'] + selected_cities
 df_final = df_selected[cols].copy()
-print(f"添加timestamp后数据形状: {df_final.shape}")
+print(f"Data shape after adding timestamp: {df_final.shape}")
 
-# ==================== 4. 处理缺失值 ====================
-print("\n🧹 处理缺失值...")
+# ==================== 4. Handle missing values ====================
+print("\n🧹 Handling missing values...")
 
-# 4.1 timestamp列缺失值（理论上不会缺失，但保留前向填充逻辑）
-df_final['timestamp'] = pd.to_datetime(df_final['timestamp'])  # 先转回datetime以便填充
+# 4.1 Missing values in timestamp column (theoretically none, but keep forward-fill logic)
+df_final['timestamp'] = pd.to_datetime(df_final['timestamp'])  # convert back to datetime for filling
 df_final['timestamp'] = df_final['timestamp'].fillna(method='ffill')
-df_final['timestamp'] = df_final['timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S')  # 转回字符串
+df_final['timestamp'] = df_final['timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S')  # convert back to string
 
-# 4.2 城市列缺失值：用各列均值填充
+# 4.2 Missing values in city columns: fill with column mean
 for city in selected_cities:
     city_mean = df_final[city].mean()
     df_final[city] = df_final[city].fillna(city_mean)
-    print(f"  列 {city} 均值: {city_mean:.2f}")
+    print(f"  Column {city} mean: {city_mean:.2f}")
 
-# 检查处理后缺失值
-print("\n处理后缺失值统计:")
+# Check missing values after processing
+print("\nMissing value statistics after processing:")
 print(df_final.isnull().sum())
 
-# ==================== 5. 保存最终文件 ====================
+# ==================== 5. Save final file ====================
 df_final.to_csv(output_path, index=False, encoding='utf-8')
-print(f"\n✅ 数据已保存到: {output_path}")
-print(f"最终数据形状: {df_final.shape}")
+print(f"\n✅ Data saved to: {output_path}")
+print(f"Final data shape: {df_final.shape}")
 
-# ==================== 6. 预览数据 ====================
-print("\n📋 数据前5行预览:")
+# ==================== 6. Preview data ====================
+print("\n📋 Preview of first 5 rows:")
 print(df_final.head())
