@@ -1,1 +1,6 @@
+final_preprocessed_data_augmentation_35040.py: augment the 70% anomaly ratio dataset in data_anomaly_ratio_handling folder to 35040
+data_augmentation_100k.py:augment the 70% anomaly ratio dataset in data_anomaly_ratio_handling folder to 100k
+
+augmented  70%_anomaly_35040data authenticity.py: check whether the augmented 35040 dataset is accurate compared with original dataset
+augmented  100k_data authenticity.py:check whether the augmented  100k dataset is accurate compared with original dataset
 
