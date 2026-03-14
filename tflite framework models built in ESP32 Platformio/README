@@ -1,2 +1,28 @@
 convert_h5_to_tflite.py： convert Conv_AE model to tensorflow lite framework
 convert_unrolled.py: convert LSTM_AE model to tensorflow lite framework
+
+ Tips:to configure on Platformio, using ini file and main.cpp
+use Noise sensor and PM2.5 sensor on ESP32 to detect the noise and PM2.5, then use the following commands on computer to burn in ESP32:
+
+pio run 
+pio run -t upload
+pio run -t uploadfs
+pio device monitor --port COM7 --baud 115200
+
+After following the 4 steps, the ESP32 could run without a computer, only  electricity is enough. 
+ESP32 will do the following things automatically:
+(1)
+ESP32 starts automatically on boot
+Read noise data every second
+Form a sample every minute
+Finalize one hourly feature every hour
+
+Run the model every 10 minutes
+(2) Log Fields:
+Timestamp
+avg_pm25
+duration_hour_equiv
+event_hour_equiv
+avg_salience
+mae
+anomaly
