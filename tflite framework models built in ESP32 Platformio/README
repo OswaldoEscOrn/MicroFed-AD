@@ -1,3 +1,5 @@
+The type of ESP32 is from expressif.com, PSRAM:16MB, SPI FLASH:32MB 
+
 convert_h5_to_tflite.py： convert Conv_AE model to tensorflow lite framework
 convert_unrolled.py: convert LSTM_AE model to tensorflow lite framework
 
